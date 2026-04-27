@@ -95,7 +95,7 @@ func runUpgrade() error {
 
 func fetchLatestRelease() (*ghRelease, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", upgradeRepo)
-	data, err := httpGet(url)
+	data, err := httpGetJSON(url)
 	if err != nil {
 		return nil, err
 	}
@@ -134,12 +134,20 @@ func fetchChecksum(release *ghRelease, assetName string) (string, error) {
 }
 
 func httpGet(url string) ([]byte, error) {
+	return httpGetWithAccept(url, "application/octet-stream")
+}
+
+func httpGetJSON(url string) ([]byte, error) {
+	return httpGetWithAccept(url, "application/vnd.github+json")
+}
+
+func httpGetWithAccept(url, accept string) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "sir-upgrade/"+version)
-	req.Header.Set("Accept", "application/octet-stream")
+	req.Header.Set("Accept", accept)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
