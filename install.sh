@@ -60,20 +60,21 @@ curl -fsSL "$DOWNLOAD_URL" -o "${TMP_DIR}/${BIN_NAME}"
 echo "  Verifying checksum..."
 curl -fsSL "$CHECKSUM_URL" -o "${TMP_DIR}/checksums.txt"
 
-if command -v sha256sum >/dev/null 2>&1; then
-  (cd "$TMP_DIR" && grep "$ASSET" checksums.txt | sha256sum --check --status) || {
-    echo "error: checksum verification failed" >&2
-    exit 1
-  }
-elif command -v shasum >/dev/null 2>&1; then
-  EXPECTED=$(grep "$ASSET" "${TMP_DIR}/checksums.txt" | awk '{print $1}')
+EXPECTED=$(grep "$ASSET" "${TMP_DIR}/checksums.txt" | awk '{print $1}')
+if [ -z "$EXPECTED" ]; then
+  echo "error: no checksum entry found for ${ASSET}" >&2
+  exit 1
+fi
+
+if [ "$OS" = "darwin" ]; then
   ACTUAL=$(shasum -a 256 "${TMP_DIR}/${BIN_NAME}" | awk '{print $1}')
-  if [ "$EXPECTED" != "$ACTUAL" ]; then
-    echo "error: checksum verification failed" >&2
-    exit 1
-  fi
 else
-  echo "  Warning: no sha256 tool found, skipping checksum verification"
+  ACTUAL=$(sha256sum "${TMP_DIR}/${BIN_NAME}" | awk '{print $1}')
+fi
+
+if [ "$EXPECTED" != "$ACTUAL" ]; then
+  echo "error: checksum verification failed" >&2
+  exit 1
 fi
 
 # ── Install ───────────────────────────────────────────────────────────────────
