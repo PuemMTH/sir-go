@@ -236,6 +236,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cfg.Technical = !m.cfg.Technical
 			m.updateViewport()
 			return m, nil
+
+		case "f":
+			m.cfg.FullPath = !m.cfg.FullPath
+			cmds = append(cmds, m.refresh())
+			return m, tea.Batch(cmds...)
 		}
 
 	case execDoneMsg:
@@ -374,7 +379,7 @@ func (m tuiModel) View() string {
 		b.WriteString(fmt.Sprintf("  🔍 %s\n", lgDim.Render(v)))
 	}
 
-	b.WriteString(lgHelp.Render("↑↓ move  space select  s shell  S stop  R restart  / search  esc clear  t tech  q quit"))
+	b.WriteString(lgHelp.Render("↑↓ move  space select  s shell  S stop  R restart  / search  esc clear  t tech  f full-path  q quit"))
 
 	return b.String()
 }
