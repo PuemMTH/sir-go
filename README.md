@@ -92,6 +92,65 @@ sir -w -t -f --interval 5 . # TUI: technical view, full paths, 5s refresh
 | `t` | Toggle technical columns |
 | `q` / `Ctrl+C` | Quit |
 
+## Autobackup
+
+Backup PostgreSQL databases from a Docker container to Cloudflare R2.
+
+### Setup credentials
+
+```bash
+sir autobackup config set \
+  --account-id <cloudflare-account-id> \
+  --access-key <r2-access-key-id> \
+  --secret-key <r2-secret-access-key> \
+  --bucket <bucket-name>
+```
+
+Credentials are saved to `~/.sir/settings.json` (mode 0600).
+
+```bash
+sir autobackup config show   # print current config
+```
+
+### Run a backup
+
+```bash
+sir autobackup run --container <container-name> --db <database> [--user postgres]
+```
+
+Connects to the container via Docker exec, runs `pg_dump`, gzips the output, and uploads to R2 at:
+
+```
+backups/<database>/<database>-<timestamp>.sql.gz
+```
+
+### Schedule automatic backups
+
+```bash
+# Install a cron job
+sir autobackup cron set \
+  --schedule "0 2 * * *" \
+  --container <container-name> \
+  --db <database> \
+  [--user postgres]
+
+sir autobackup cron status   # show active cron job
+sir autobackup cron remove   # remove cron job
+```
+
+The cron entry runs `sir autobackup run` on the given schedule using the system crontab.
+
+### Autobackup commands
+
+| Command | Description |
+|---------|-------------|
+| `sir autobackup config set` | Save R2 credentials to `~/.sir/settings.json` |
+| `sir autobackup config show` | Print current R2 configuration |
+| `sir autobackup run` | Run a backup immediately |
+| `sir autobackup cron set` | Install a cron job for automatic backups |
+| `sir autobackup cron status` | Show the active autobackup cron job |
+| `sir autobackup cron remove` | Remove the autobackup cron job |
+
 ## Releasing
 
 Push a `v*` tag to trigger the GitHub Actions release workflow:
@@ -128,6 +187,7 @@ sir-go/
 ├── tui.go               # Bubble Tea TUI model
 ├── print.go             # one-shot terminal output
 ├── upgrade.go           # self-upgrade logic
+├── backup.go            # autobackup: pg_dump → gzip → Cloudflare R2
 └── install.sh           # curl-based installer
 ```
 

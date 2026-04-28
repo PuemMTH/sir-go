@@ -1,0 +1,49 @@
+# Test Container: PostgreSQL with mock data
+
+## Spawn container
+docker run -d --name sir-test-pg \
+  -e POSTGRES_PASSWORD=testpass \
+  -e POSTGRES_USER=testuser \
+  -e POSTGRES_DB=testdb \
+  postgres:15
+
+## Create mock data
+docker exec -i sir-test-pg psql -U testuser -d testdb << 'EOF'
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE orders (
+  id SERIAL PRIMARY KEY,
+  user_id INT REFERENCES users(id),
+  product TEXT NOT NULL,
+  amount NUMERIC(10,2),
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO users (name, email) VALUES
+  ('Alice', 'alice@example.com'),
+  ('Bob', 'bob@example.com'),
+  ('Charlie', 'charlie@example.com'),
+  ('Diana', 'diana@example.com'),
+  ('Eve', 'eve@example.com');
+
+INSERT INTO orders (user_id, product, amount, status) VALUES
+  (1, 'MacBook Pro', 2499.99, 'completed'),
+  (1, 'iPhone 15', 999.00, 'completed'),
+  (2, 'AirPods Pro', 249.00, 'shipped'),
+  (3, 'iPad Air', 749.00, 'pending'),
+  (4, 'Apple Watch', 399.00, 'completed'),
+  (5, 'Mac Mini', 599.00, 'cancelled'),
+  (2, 'Magic Keyboard', 99.00, 'shipped');
+EOF
+
+## Run backup
+sir autobackup run --container sir-test-pg --db testdb --user testuser
+
+## Cleanup
+docker rm -f sir-test-pg
