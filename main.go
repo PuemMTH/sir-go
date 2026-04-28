@@ -137,6 +137,7 @@ func main() {
 	})
 
 	rootCmd.AddCommand(
+		newAutobackupCmd(),
 		&cobra.Command{
 			Use:   "version",
 			Short: "Print the current version",
