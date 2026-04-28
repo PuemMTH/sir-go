@@ -34,6 +34,20 @@ func main() {
   sir -w .                         # TUI mode (scan path)
   sir -w -t -f --interval 5 .`,
 		Run: func(cmd *cobra.Command, args []string) {
+			conf := loadConfig()
+			if !cmd.Flags().Changed("depth") && conf.Depth > 0 {
+				cfg.Depth = conf.Depth
+			}
+			if !cmd.Flags().Changed("interval") && conf.Interval > 0 {
+				intervalSec = conf.Interval
+			}
+			if !cmd.Flags().Changed("full-path") && conf.FullPath {
+				cfg.FullPath = conf.FullPath
+			}
+			if !cmd.Flags().Changed("technical") && conf.Technical {
+				cfg.Technical = conf.Technical
+			}
+
 			var targetPath string
 			if len(args) == 1 {
 				var err error
@@ -46,6 +60,18 @@ func main() {
 				if err != nil || !info.IsDir() {
 					cRed.Printf("  Error: '%s' is not a directory\n", args[0])
 					os.Exit(1)
+				}
+			} else if conf.DefaultPath != "" {
+				expanded := os.ExpandEnv(conf.DefaultPath)
+				if home, err := os.UserHomeDir(); err == nil {
+					if len(expanded) >= 2 && expanded[:2] == "~/" {
+						expanded = filepath.Join(home, expanded[2:])
+					}
+				}
+				if abs, err := filepath.Abs(expanded); err == nil {
+					if info, err := os.Stat(abs); err == nil && info.IsDir() {
+						targetPath = abs
+					}
 				}
 			}
 
@@ -81,6 +107,35 @@ func main() {
 		},
 	}
 
+	configCmd := &cobra.Command{
+		Use:   "config",
+		Short: "Manage sir configuration",
+	}
+	configCmd.AddCommand(&cobra.Command{
+		Use:   "init",
+		Short: "Create a sample config file at ~/.config/sir/config.yaml",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := initConfig(); err != nil {
+				cRed.Printf("  Error: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	})
+	configCmd.AddCommand(&cobra.Command{
+		Use:   "path",
+		Short: "Print the config file path",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			p, err := configPath()
+			if err != nil {
+				cRed.Printf("  Error: %v\n", err)
+				os.Exit(1)
+			}
+			cCyan.Printf("  %s\n", p)
+		},
+	})
+
 	rootCmd.AddCommand(
 		&cobra.Command{
 			Use:   "version",
@@ -101,6 +156,7 @@ func main() {
 				}
 			},
 		},
+		configCmd,
 	)
 
 	f := rootCmd.Flags()

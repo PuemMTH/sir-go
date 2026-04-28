@@ -10,7 +10,8 @@ const (
 )
 
 type containerInfo struct {
-	ID      string
+	ID      string // truncated 12-char display ID
+	FullID  string // full container ID for docker operations
 	State   string
 	Created int64
 	Image   string
@@ -18,16 +19,17 @@ type containerInfo struct {
 }
 
 type Row struct {
-	Num         int
-	Folder      string
-	Compose     string
-	Service     string
-	State       string
-	Uptime      string
-	ContainerID string
-	Image       string
-	Ports       string
-	Status      ServiceStatus
+	Num             int
+	Folder          string
+	Compose         string
+	Service         string
+	State           string
+	Uptime          string
+	ContainerID     string
+	FullContainerID string // full ID for exec/stop/restart
+	Image           string
+	Ports           string
+	Status          ServiceStatus
 }
 
 type ScanConfig struct {

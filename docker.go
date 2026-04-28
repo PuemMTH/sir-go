@@ -42,7 +42,7 @@ func loadContainerIndex(ctx context.Context, cli *client.Client) (containerIndex
 		if len(cid) > 12 {
 			cid = cid[:12]
 		}
-		info := containerInfo{ID: cid, State: c.State, Created: c.Created, Image: img, Ports: portsStr}
+		info := containerInfo{ID: cid, FullID: c.ID, State: c.State, Created: c.Created, Image: img, Ports: portsStr}
 		key := [2]string{project, svc}
 		if existing, ok := idx[key]; !ok || existing.State != "running" {
 			idx[key] = info

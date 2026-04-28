@@ -75,6 +75,7 @@ func collectRows(ctx context.Context, cli *client.Client, targetPath string, cfg
 				if found {
 					r.Uptime = formatUptime(info.Created, info.State)
 					r.ContainerID = info.ID
+					r.FullContainerID = info.FullID
 					r.Image = info.Image
 					r.Ports = info.Ports
 					switch info.State {
@@ -150,15 +151,16 @@ func collectAllContainers(ctx context.Context, cli *client.Client, cfg ScanConfi
 		}
 
 		r := Row{
-			Num:         num,
-			Folder:      project,
-			Compose:     composeFilePath,
-			Service:     svc,
-			State:       c.State,
-			Uptime:      formatUptime(c.Created, c.State),
-			ContainerID: cid,
-			Image:       img,
-			Ports:       portsStr,
+			Num:             num,
+			Folder:          project,
+			Compose:         composeFilePath,
+			Service:         svc,
+			State:           c.State,
+			Uptime:          formatUptime(c.Created, c.State),
+			ContainerID:     cid,
+			FullContainerID: c.ID,
+			Image:           img,
+			Ports:           portsStr,
 		}
 
 		switch c.State {
