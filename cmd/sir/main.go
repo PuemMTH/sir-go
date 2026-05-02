@@ -9,6 +9,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/docker/docker/client"
 	"github.com/spf13/cobra"
+
+	"sir/internal/backup"
+	"sir/internal/config"
+	"sir/internal/docker"
+	"sir/internal/styles"
+	"sir/internal/tui"
+	"sir/internal/types"
+	"sir/internal/ui"
+	"sir/internal/upgrade"
 )
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z"
@@ -18,7 +27,7 @@ func main() {
 	var (
 		watchMode   bool
 		intervalSec int
-		cfg         ScanConfig
+		cfg         types.ScanConfig
 	)
 
 	rootCmd := &cobra.Command{
@@ -34,7 +43,7 @@ func main() {
   sir -w .                         # TUI mode (scan path)
   sir -w -t -f --interval 5 .`,
 		Run: func(cmd *cobra.Command, args []string) {
-			conf := loadConfig()
+			conf := config.Load()
 			if !cmd.Flags().Changed("depth") && conf.Depth > 0 {
 				cfg.Depth = conf.Depth
 			}
@@ -53,12 +62,12 @@ func main() {
 				var err error
 				targetPath, err = filepath.Abs(args[0])
 				if err != nil {
-					cRed.Printf("  Error: %v\n", err)
+					styles.CRed.Printf("  Error: %v\n", err)
 					os.Exit(1)
 				}
 				info, err := os.Stat(targetPath)
 				if err != nil || !info.IsDir() {
-					cRed.Printf("  Error: '%s' is not a directory\n", args[0])
+					styles.CRed.Printf("  Error: '%s' is not a directory\n", args[0])
 					os.Exit(1)
 				}
 			} else if conf.DefaultPath != "" {
@@ -78,32 +87,32 @@ func main() {
 			ctx := context.Background()
 			cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 			if err != nil {
-				cRed.Printf("  Error: cannot connect to Docker: %v\n", err)
+				styles.CRed.Printf("  Error: cannot connect to Docker: %v\n", err)
 				os.Exit(1)
 			}
 			defer cli.Close()
 
 			if watchMode {
-				m := newTUI(ctx, cli, targetPath, cfg, time.Duration(intervalSec)*time.Second)
+				m := tui.New(ctx, cli, targetPath, cfg, time.Duration(intervalSec)*time.Second)
 				p := tea.NewProgram(m, tea.WithAltScreen())
 				if _, err := p.Run(); err != nil {
-					cRed.Printf("  TUI error: %v\n", err)
+					styles.CRed.Printf("  TUI error: %v\n", err)
 					os.Exit(1)
 				}
 				return
 			}
 
-			var res scanResult
+			var res types.ScanResult
 			if targetPath == "" {
-				res = collectAllContainers(ctx, cli, cfg)
+				res = docker.CollectAllContainers(ctx, cli, cfg)
 			} else {
-				res = collectRows(ctx, cli, targetPath, cfg)
+				res = docker.CollectRows(ctx, cli, targetPath, cfg)
 			}
 			label := targetPath
 			if label == "" {
 				label = "(all Docker Compose containers)"
 			}
-			printOneShot(label, cfg, res)
+			ui.PrintOneShot(label, cfg, res)
 		},
 	}
 
@@ -116,8 +125,8 @@ func main() {
 		Short: "Create a sample config file at ~/.config/sir/config.yaml",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := initConfig(); err != nil {
-				cRed.Printf("  Error: %v\n", err)
+			if err := config.Init(); err != nil {
+				styles.CRed.Printf("  Error: %v\n", err)
 				os.Exit(1)
 			}
 		},
@@ -127,23 +136,23 @@ func main() {
 		Short: "Print the config file path",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			p, err := configPath()
+			p, err := config.Path()
 			if err != nil {
-				cRed.Printf("  Error: %v\n", err)
+				styles.CRed.Printf("  Error: %v\n", err)
 				os.Exit(1)
 			}
-			cCyan.Printf("  %s\n", p)
+			styles.CCyan.Printf("  %s\n", p)
 		},
 	})
 
 	rootCmd.AddCommand(
-		newAutobackupCmd(),
+		backup.NewCmd(),
 		&cobra.Command{
 			Use:   "version",
 			Short: "Print the current version",
 			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
-				cCyan.Printf("  sir %s\n", version)
+				styles.CCyan.Printf("  sir %s\n", version)
 			},
 		},
 		&cobra.Command{
@@ -151,8 +160,8 @@ func main() {
 			Short: "Upgrade sir to the latest release",
 			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
-				if err := runUpgrade(); err != nil {
-					cRed.Printf("  Error: %v\n", err)
+				if err := upgrade.Run(version); err != nil {
+					styles.CRed.Printf("  Error: %v\n", err)
 					os.Exit(1)
 				}
 			},
@@ -171,7 +180,7 @@ func main() {
 	rootCmd.SilenceErrors = true
 
 	if err := rootCmd.Execute(); err != nil {
-		cRed.Printf("  %v\n", err)
+		styles.CRed.Printf("  %v\n", err)
 		os.Exit(1)
 	}
 }

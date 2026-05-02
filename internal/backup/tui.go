@@ -1,4 +1,4 @@
-package main
+package backup
 
 import (
 	"bytes"
@@ -21,6 +21,8 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/spf13/cobra"
+
+	"sir/internal/styles"
 )
 
 // ── states ───────────────────────────────────────────────────────────────────
@@ -28,17 +30,16 @@ import (
 type btState int
 
 const (
-	btList      btState = iota // container list
-	btEnterUser                // ask pg user (+ schedule for cron) before fetching DBs
-	btLoadingDB                // fetching pg databases
-	btPickDB                   // select database from list
-	btBusy                     // backup / cron running
+	btList      btState = iota
+	btEnterUser
+	btLoadingDB
+	btPickDB
+	btBusy
 )
 
-// focus inside btEnterUser
 const (
 	fuUser  = iota
-	fuSched // cron only
+	fuSched
 )
 
 // ── types ────────────────────────────────────────────────────────────────────
@@ -80,32 +81,26 @@ type btModel struct {
 	cli *client.Client
 
 	state  btState
-	action string // "backup" | "cron"
+	action string
 
-	// container list
 	containers  []btContainer
 	cursor      int
 	filter      string
 	searching   bool
 	searchInput textinput.Model
 
-	// btEnterUser fields
 	userInput  textinput.Model
 	schedInput textinput.Model
-	fuFocus    int // fuUser | fuSched
+	fuFocus    int
 
-	// btPickDB fields
 	databases []string
 	dbCursor  int
 
-	// resolved values (set after btEnterUser confirmed)
 	pgUser   string
 	schedule string
 
-	// log
 	logs []btLogEntry
 
-	// layout
 	status string
 	width  int
 	height int
@@ -115,7 +110,7 @@ type btModel struct {
 
 // ── constructor ───────────────────────────────────────────────────────────────
 
-func newBackupTUI(ctx context.Context, cli *client.Client) btModel {
+func newBTModel(ctx context.Context, cli *client.Client) btModel {
 	si := textinput.New()
 	si.Placeholder = "filter containers..."
 	si.CharLimit = 64
@@ -129,11 +124,11 @@ func newBackupTUI(ctx context.Context, cli *client.Client) btModel {
 	sc.CharLimit = 32
 
 	return btModel{
-		ctx:        ctx,
-		cli:        cli,
+		ctx:         ctx,
+		cli:         cli,
 		searchInput: si,
-		userInput:  ui,
-		schedInput: sc,
+		userInput:   ui,
+		schedInput:  sc,
 	}
 }
 
@@ -217,7 +212,7 @@ func (m btModel) fetchDatabases(containerID, pgUser string) tea.Cmd {
 
 func (m btModel) doBackup(containerID, pgUser, dbName string) tea.Cmd {
 	return func() tea.Msg {
-		settings, err := loadBackupSettings()
+		s, err := loadSettings()
 		if err != nil {
 			return btBackupDoneMsg{err: fmt.Errorf("no R2 config — run 'sir autobackup config set'")}
 		}
@@ -234,9 +229,9 @@ func (m btModel) doBackup(containerID, pgUser, dbName string) tea.Cmd {
 		ts := time.Now().UTC().Format("2006-01-02T15-04-05Z")
 		key := fmt.Sprintf("backups/%s/%s-%s.sql.gz", dbName, dbName, ts)
 
-		r2 := newR2Client(settings.R2)
+		r2 := newR2Client(s.R2)
 		_, err = r2.PutObject(m.ctx, &s3.PutObjectInput{
-			Bucket:        aws.String(settings.R2.BucketName),
+			Bucket:        aws.String(s.R2.BucketName),
 			Key:           aws.String(key),
 			Body:          bytes.NewReader(compressed),
 			ContentType:   aws.String("application/gzip"),
@@ -245,7 +240,7 @@ func (m btModel) doBackup(containerID, pgUser, dbName string) tea.Cmd {
 		if err != nil {
 			return btBackupDoneMsg{err: fmt.Errorf("upload: %w", err)}
 		}
-		return btBackupDoneMsg{path: fmt.Sprintf("%s/%s", settings.R2.BucketName, key)}
+		return btBackupDoneMsg{path: fmt.Sprintf("%s/%s", s.R2.BucketName, key)}
 	}
 }
 
@@ -289,7 +284,7 @@ func (m btModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case btDBsMsg:
 		if msg.err != nil {
 			m.state = btEnterUser
-			m.status = red("  ✗ %s", msg.err.Error())
+			m.status = styles.Red("  ✗ %s", msg.err.Error())
 			m.updateVP()
 			return m, nil
 		}
@@ -340,6 +335,9 @@ func (m btModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.vp, cmd = m.vp.Update(msg)
 	return m, cmd
 }
+
+// clearStatusMsg is shared within package (used by both backup.go tui and main tui)
+type clearStatusMsg struct{}
 
 // ── list keys ─────────────────────────────────────────────────────────────────
 
@@ -444,7 +442,6 @@ func (m btModel) updateEnterUser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.schedInput.Focus()
 			return m, textinput.Blink
 		}
-		// store resolved values
 		m.pgUser = pgUser
 		m.schedule = strings.TrimSpace(m.schedInput.Value())
 
@@ -455,7 +452,7 @@ func (m btModel) updateEnterUser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		ct := filtered[m.cursor]
 		m.state = btLoadingDB
-		m.status = dim("  Fetching databases from %s...", ct.name)
+		m.status = styles.Dim("  Fetching databases from %s...", ct.name)
 		m.updateVP()
 		return m, m.fetchDatabases(ct.fullID, m.pgUser)
 	}
@@ -506,12 +503,12 @@ func (m btModel) updatePickDB(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		if m.action == "backup" {
 			m.state = btBusy
-			m.status = dim("  Dumping '%s' from %s...", dbName, ct.name)
+			m.status = styles.Dim("  Dumping '%s' from %s...", dbName, ct.name)
 			m.updateVP()
 			return m, m.doBackup(ct.fullID, m.pgUser, dbName)
 		}
 		m.state = btBusy
-		m.status = dim("  Setting cron (%s) for %s/%s...", m.schedule, ct.name, dbName)
+		m.status = styles.Dim("  Setting cron (%s) for %s/%s...", m.schedule, ct.name, dbName)
 		m.updateVP()
 		return m, m.doCron(ct.fullID, m.pgUser, dbName, m.schedule)
 	}
@@ -527,10 +524,10 @@ func (m btModel) View() string {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(lgCyan.Render("  🗄  SIR - Autobackup Manager"))
-	cfg, _ := loadBackupSettings()
+	b.WriteString(styles.LgCyan.Render("  🗄  SIR - Autobackup Manager"))
+	cfg, _ := loadSettings()
 	if cfg.R2.BucketName != "" {
-		b.WriteString(lgDim.Render("  ·  R2: " + cfg.R2.BucketName))
+		b.WriteString(styles.LgDim.Render("  ·  R2: " + cfg.R2.BucketName))
 	}
 	b.WriteString("\n\n")
 
@@ -549,7 +546,7 @@ func (m btModel) View() string {
 		if m.searching {
 			b.WriteString("  🔍 " + m.searchInput.View() + "\n")
 		} else if m.filter != "" {
-			b.WriteString("  🔍 " + lgDim.Render(m.filter) + "\n")
+			b.WriteString("  🔍 " + styles.LgDim.Render(m.filter) + "\n")
 		}
 		b.WriteString(m.viewHelp())
 	}
@@ -584,25 +581,23 @@ func (m btModel) viewEnterUser() string {
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("  ╭%s╮\n", hr))
-	b.WriteString(fmt.Sprintf("  │%s│\n", pad(fmt.Sprintf(" %s %s ", lgBold.Render(title+":"), lgCyan.Render(ctName)), w)))
+	b.WriteString(fmt.Sprintf("  │%s│\n", pad(fmt.Sprintf(" %s %s ", styles.LgBold.Render(title+":"), styles.LgCyan.Render(ctName)), w)))
 	b.WriteString(fmt.Sprintf("  ├%s┤\n", hr))
 
-	// PG User row
 	uFocused := m.fuFocus == fuUser
-	uMark := dim("  ")
+	uMark := styles.Dim("  ")
 	if uFocused {
-		uMark = cyan("> ")
+		uMark = styles.Cyan("> ")
 	}
-	b.WriteString(fmt.Sprintf("  │%s│\n", pad(fmt.Sprintf(" %s%s  %s", uMark, lgBold.Render("PG User "), m.userInput.View()), w)))
+	b.WriteString(fmt.Sprintf("  │%s│\n", pad(fmt.Sprintf(" %s%s  %s", uMark, styles.LgBold.Render("PG User "), m.userInput.View()), w)))
 
-	// Schedule row (cron only)
 	if m.action == "cron" {
 		sFocused := m.fuFocus == fuSched
-		sMark := dim("  ")
+		sMark := styles.Dim("  ")
 		if sFocused {
-			sMark = cyan("> ")
+			sMark = styles.Cyan("> ")
 		}
-		b.WriteString(fmt.Sprintf("  │%s│\n", pad(fmt.Sprintf(" %s%s  %s", sMark, lgBold.Render("Schedule"), m.schedInput.View()), w)))
+		b.WriteString(fmt.Sprintf("  │%s│\n", pad(fmt.Sprintf(" %s%s  %s", sMark, styles.LgBold.Render("Schedule"), m.schedInput.View()), w)))
 	}
 
 	if m.status != "" {
@@ -612,9 +607,9 @@ func (m btModel) viewEnterUser() string {
 	b.WriteString(fmt.Sprintf("  ├%s┤\n", hr))
 	help := ""
 	if m.action == "cron" {
-		help = lgDim.Render("  tab next  enter confirm  esc back")
+		help = styles.LgDim.Render("  tab next  enter confirm  esc back")
 	} else {
-		help = lgDim.Render("  enter confirm  esc back")
+		help = styles.LgDim.Render("  enter confirm  esc back")
 	}
 	b.WriteString(fmt.Sprintf("  │%s│\n", pad(" "+help, w)))
 	b.WriteString(fmt.Sprintf("  ╰%s╯\n", hr))
@@ -642,16 +637,16 @@ func (m btModel) viewPickDB() string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("  ╭%s╮\n", hr))
 	b.WriteString(fmt.Sprintf("  │%s│\n", pad(fmt.Sprintf(" %s %s  %s %s",
-		lgBold.Render(title+":"), lgCyan.Render(ctName),
-		lgDim.Render("user:"), lgDim.Render(m.pgUser),
+		styles.LgBold.Render(title+":"), styles.LgCyan.Render(ctName),
+		styles.LgDim.Render("user:"), styles.LgDim.Render(m.pgUser),
 	), w)))
 	if m.action == "cron" {
 		b.WriteString(fmt.Sprintf("  │%s│\n", pad(fmt.Sprintf(" %s %s",
-			lgDim.Render("schedule:"), lgDim.Render(m.schedule),
+			styles.LgDim.Render("schedule:"), styles.LgDim.Render(m.schedule),
 		), w)))
 	}
 	b.WriteString(fmt.Sprintf("  ├%s┤\n", hr))
-	b.WriteString(fmt.Sprintf("  │%s│\n", pad(" "+lgBold.Render("Select Database"), w)))
+	b.WriteString(fmt.Sprintf("  │%s│\n", pad(" "+styles.LgBold.Render("Select Database"), w)))
 
 	maxRows := 10
 	start := 0
@@ -664,35 +659,35 @@ func (m btModel) viewPickDB() string {
 	}
 
 	if len(m.databases) == 0 {
-		b.WriteString(fmt.Sprintf("  │%s│\n", pad("  "+lgDim.Render("no databases found"), w)))
+		b.WriteString(fmt.Sprintf("  │%s│\n", pad("  "+styles.LgDim.Render("no databases found"), w)))
 	}
 	for i := start; i < end; i++ {
 		db := m.databases[i]
 		if i == m.dbCursor {
-			b.WriteString(fmt.Sprintf("  │%s│\n", pad(fmt.Sprintf("  %s %s", cyan(">"), lgBold.Render(db)), w)))
+			b.WriteString(fmt.Sprintf("  │%s│\n", pad(fmt.Sprintf("  %s %s", styles.Cyan(">"), styles.LgBold.Render(db)), w)))
 		} else {
 			b.WriteString(fmt.Sprintf("  │%s│\n", pad(fmt.Sprintf("    %s", db), w)))
 		}
 	}
 
 	b.WriteString(fmt.Sprintf("  ├%s┤\n", hr))
-	b.WriteString(fmt.Sprintf("  │%s│\n", pad(" "+lgDim.Render("↑↓ select  enter confirm  esc back"), w)))
+	b.WriteString(fmt.Sprintf("  │%s│\n", pad(" "+styles.LgDim.Render("↑↓ select  enter confirm  esc back"), w)))
 	b.WriteString(fmt.Sprintf("  ╰%s╯\n", hr))
 	return b.String()
 }
 
 func (m btModel) viewLogs() string {
 	if len(m.logs) == 0 {
-		return lgDim.Render("  No recent backups") + "\n"
+		return styles.LgDim.Render("  No recent backups") + "\n"
 	}
 	var b strings.Builder
-	b.WriteString(lgBold.Render("  Recent") + "\n")
+	b.WriteString(styles.LgBold.Render("  Recent") + "\n")
 	for _, e := range m.logs {
-		ts := lgDim.Render(e.at.Format("15:04:05"))
+		ts := styles.LgDim.Render(e.at.Format("15:04:05"))
 		if e.ok {
-			b.WriteString(fmt.Sprintf("  %s %s  %s\n", green("✓"), ts, lgDim.Render(e.text)))
+			b.WriteString(fmt.Sprintf("  %s %s  %s\n", styles.Green("✓"), ts, styles.LgDim.Render(e.text)))
 		} else {
-			b.WriteString(fmt.Sprintf("  %s %s  %s\n", red("✗"), ts, red("%s", e.text)))
+			b.WriteString(fmt.Sprintf("  %s %s  %s\n", styles.Red("✗"), ts, styles.Red("%s", e.text)))
 		}
 	}
 	return b.String()
@@ -700,9 +695,9 @@ func (m btModel) viewLogs() string {
 
 func (m btModel) viewHelp() string {
 	if m.state == btBusy || m.state == btLoadingDB {
-		return lgHelp.Render("  please wait...")
+		return styles.LgHelp.Render("  please wait...")
 	}
-	return lgHelp.Render("  ↑↓ move  b backup  c cron  r refresh  / search  q quit")
+	return styles.LgHelp.Render("  ↑↓ move  b backup  c cron  r refresh  / search  q quit")
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -767,20 +762,20 @@ func (m *btModel) updateVP() {
 func (m btModel) renderContainerTable() string {
 	filtered := m.filtered()
 	if len(filtered) == 0 {
-		return lgDim.Render("  No running containers")
+		return styles.LgDim.Render("  No running containers")
 	}
 	t := table.NewWriter()
 	t.AppendHeader(table.Row{" ", "Container", "Image", "Status"})
 	for i, c := range filtered {
 		marker := " "
 		if i == m.cursor {
-			marker = cyan(">")
+			marker = styles.Cyan(">")
 		}
-		stateStr := green("● running")
+		stateStr := styles.Green("● running")
 		if c.state != "running" {
-			stateStr = yellow("○ %s", c.state)
+			stateStr = styles.Yellow("○ %s", c.state)
 		}
-		t.AppendRow(table.Row{marker, cyan(c.name), dim(c.image), stateStr})
+		t.AppendRow(table.Row{marker, styles.Cyan(c.name), styles.Dim(c.image), stateStr})
 	}
 	style := table.StyleLight
 	style.Color.Header = text.Colors{text.FgCyan, text.Bold}
@@ -806,16 +801,9 @@ func visLen(s string) int {
 	return n
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // ── cobra command ─────────────────────────────────────────────────────────────
 
-func newAutobackupTUICmd() *cobra.Command {
+func newTUICmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "tui",
 		Short: "Interactive TUI for managing autobackups",
@@ -834,16 +822,16 @@ func newAutobackupTUICmd() *cobra.Command {
 			ctx := context.Background()
 			cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 			if err != nil {
-				cRed.Printf("  Error: cannot connect to Docker: %v\n", err)
+				styles.CRed.Printf("  Error: cannot connect to Docker: %v\n", err)
 				os.Exit(1)
 			}
 			defer cli.Close()
 
-			m := newBackupTUI(ctx, cli)
+			m := newBTModel(ctx, cli)
 			p := tea.NewProgram(m, tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {
 				fmt.Fprintf(logFile, "run error: %v\n", err)
-				cRed.Printf("  TUI error: %v\n", err)
+				styles.CRed.Printf("  TUI error: %v\n", err)
 				os.Exit(1)
 			}
 		},

@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"context"
@@ -13,6 +13,11 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/fatih/color"
+
+	"sir/internal/docker"
+	"sir/internal/styles"
+	"sir/internal/types"
+	"sir/internal/ui"
 )
 
 type tickMsg time.Time
@@ -22,7 +27,7 @@ func tickCmd(d time.Duration) tea.Cmd {
 }
 
 type refreshMsg struct {
-	data scanResult
+	data types.ScanResult
 	at   time.Time
 }
 
@@ -40,13 +45,13 @@ func clearStatusAfter(d time.Duration) tea.Cmd {
 }
 
 type tuiModel struct {
-	cfg        ScanConfig
+	cfg        types.ScanConfig
 	targetPath string
 	ctx        context.Context
 	cli        *client.Client
 	interval   time.Duration
 
-	data       scanResult
+	data       types.ScanResult
 	lastUpdate time.Time
 
 	cursor   int
@@ -62,7 +67,7 @@ type tuiModel struct {
 	height     int
 }
 
-func newTUI(ctx context.Context, cli *client.Client, targetPath string, cfg ScanConfig, interval time.Duration) tuiModel {
+func New(ctx context.Context, cli *client.Client, targetPath string, cfg types.ScanConfig, interval time.Duration) tea.Model {
 	ti := textinput.New()
 	ti.Placeholder = "type to filter..."
 	ti.CharLimit = 64
@@ -86,18 +91,18 @@ func (m tuiModel) refresh() tea.Cmd {
 }
 
 func (m tuiModel) doRefresh() tea.Msg {
-	var data scanResult
+	var data types.ScanResult
 	if m.targetPath == "" {
-		data = collectAllContainers(m.ctx, m.cli, m.cfg)
+		data = docker.CollectAllContainers(m.ctx, m.cli, m.cfg)
 	} else {
-		data = collectRows(m.ctx, m.cli, m.targetPath, m.cfg)
+		data = docker.CollectRows(m.ctx, m.cli, m.targetPath, m.cfg)
 	}
 	return refreshMsg{data: data, at: time.Now()}
 }
 
 func (m tuiModel) selectedIDs() []string {
 	var ids []string
-	for _, r := range m.data.rows {
+	for _, r := range m.data.Rows {
 		if m.selected[r.Num] && r.FullContainerID != "" {
 			ids = append(ids, r.FullContainerID)
 		}
@@ -174,7 +179,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "down":
-			filtered := filterRows(m.data.rows, m.input.Value())
+			filtered := ui.FilterRows(m.data.Rows, m.input.Value())
 			if m.cursor < len(filtered)-1 {
 				m.cursor++
 				m.updateViewport()
@@ -182,7 +187,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case " ":
-			filtered := filterRows(m.data.rows, m.input.Value())
+			filtered := ui.FilterRows(m.data.Rows, m.input.Value())
 			if m.cursor < len(filtered) {
 				num := filtered[m.cursor].Num
 				if m.selected[num] {
@@ -195,16 +200,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "s":
-			filtered := filterRows(m.data.rows, m.input.Value())
+			filtered := ui.FilterRows(m.data.Rows, m.input.Value())
 			if m.cursor < len(filtered) {
 				r := filtered[m.cursor]
-				if r.Status == StatusRunning && r.FullContainerID != "" {
+				if r.Status == types.StatusRunning && r.FullContainerID != "" {
 					shellCmd := exec.Command("docker", "exec", "-it", r.FullContainerID, "sh")
 					return m, tea.ExecProcess(shellCmd, func(err error) tea.Msg {
 						return execDoneMsg{err: err}
 					})
 				}
-				m.statusMsg = yellow("  ⚠  '%s' is not running", r.Service)
+				m.statusMsg = styles.Yellow("  ⚠  '%s' is not running", r.Service)
 				return m, clearStatusAfter(3 * time.Second)
 			}
 			return m, nil
@@ -212,19 +217,19 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "S":
 			ids := m.selectedIDs()
 			if len(ids) == 0 {
-				m.statusMsg = yellow("  ⚠  No services selected — use space to select")
+				m.statusMsg = styles.Yellow("  ⚠  No services selected — use space to select")
 				return m, clearStatusAfter(3 * time.Second)
 			}
-			m.statusMsg = dim("  Stopping %d service(s)...", len(ids))
+			m.statusMsg = styles.Dim("  Stopping %d service(s)...", len(ids))
 			return m, m.bulkStopCmd(ids)
 
 		case "R":
 			ids := m.selectedIDs()
 			if len(ids) == 0 {
-				m.statusMsg = yellow("  ⚠  No services selected — use space to select")
+				m.statusMsg = styles.Yellow("  ⚠  No services selected — use space to select")
 				return m, clearStatusAfter(3 * time.Second)
 			}
-			m.statusMsg = dim("  Restarting %d service(s)...", len(ids))
+			m.statusMsg = styles.Dim("  Restarting %d service(s)...", len(ids))
 			return m, m.bulkRestartCmd(ids)
 
 		case "/":
@@ -245,9 +250,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case execDoneMsg:
 		if msg.err != nil {
-			m.statusMsg = red("  ✗  Shell exited: %v", msg.err)
+			m.statusMsg = styles.Red("  ✗  Shell exited: %v", msg.err)
 		} else {
-			m.statusMsg = green("  ✓  Shell session ended")
+			m.statusMsg = styles.Green("  ✓  Shell session ended")
 		}
 		m.updateViewport()
 		return m, clearStatusAfter(3 * time.Second)
@@ -255,9 +260,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case bulkDoneMsg:
 		m.selected = make(map[int]bool)
 		if msg.failed > 0 {
-			m.statusMsg = yellow("  ⚠  %s: %d done, %d failed", msg.action, msg.done, msg.failed)
+			m.statusMsg = styles.Yellow("  ⚠  %s: %d done, %d failed", msg.action, msg.done, msg.failed)
 		} else {
-			m.statusMsg = green("  ✓  %s %d service(s)", msg.action, msg.done)
+			m.statusMsg = styles.Green("  ✓  %s %d service(s)", msg.action, msg.done)
 		}
 		m.updateViewport()
 		return m, tea.Batch(clearStatusAfter(3*time.Second), m.refresh())
@@ -286,8 +291,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshMsg:
 		m.data = msg.data
 		m.lastUpdate = msg.at
-		// clamp cursor in case rows shrank
-		filtered := filterRows(m.data.rows, m.input.Value())
+		filtered := ui.FilterRows(m.data.Rows, m.input.Value())
 		if m.cursor >= len(filtered) && len(filtered) > 0 {
 			m.cursor = len(filtered) - 1
 		}
@@ -315,16 +319,15 @@ func (m tuiModel) fixedLines() int {
 }
 
 func (m *tuiModel) updateViewport() {
-	filtered := filterRows(m.data.rows, m.input.Value())
+	filtered := ui.FilterRows(m.data.Rows, m.input.Value())
 	if m.cursor >= len(filtered) && len(filtered) > 0 {
 		m.cursor = len(filtered) - 1
 	}
 	if len(filtered) == 0 {
-		m.viewport.SetContent(lgDim.Render("  No matching services"))
+		m.viewport.SetContent(styles.LgDim.Render("  No matching services"))
 		return
 	}
-	m.viewport.SetContent(renderTable(filtered, m.cfg, m.cursor, m.selected))
-	// keep cursor row visible: header takes 3 lines (top border + header + separator)
+	m.viewport.SetContent(ui.RenderTable(filtered, m.cfg, m.cursor, m.selected))
 	cursorLine := m.cursor + 3
 	if cursorLine < m.viewport.YOffset {
 		m.viewport.SetYOffset(cursorLine)
@@ -341,7 +344,7 @@ func (m tuiModel) View() string {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(lgCyan.Render("  🐳  SIR - Service Inspector Reporter"))
+	b.WriteString(styles.LgCyan.Render("  🐳  SIR - Service Inspector Reporter"))
 	b.WriteString("\n\n")
 
 	scanLabel := m.targetPath
@@ -349,9 +352,9 @@ func (m tuiModel) View() string {
 		scanLabel = "(all Docker Compose containers)"
 	}
 	b.WriteString(fmt.Sprintf("  %s %s    %s every %ds    %s %s\n\n",
-		lgBold.Render("Scanning:"), lgDim.Render(scanLabel),
-		lgBold.Render("Refresh:"), int(m.interval.Seconds()),
-		lgBold.Render("Updated:"), m.lastUpdate.Format("15:04:05"),
+		styles.LgBold.Render("Scanning:"), styles.LgDim.Render(scanLabel),
+		styles.LgBold.Render("Refresh:"), int(m.interval.Seconds()),
+		styles.LgBold.Render("Updated:"), m.lastUpdate.Format("15:04:05"),
 	))
 
 	b.WriteString(m.viewport.View())
@@ -360,12 +363,12 @@ func (m tuiModel) View() string {
 	selCount := len(m.selected)
 	selInfo := ""
 	if selCount > 0 {
-		selInfo = fmt.Sprintf("   %s", cyan("selected: %d", selCount))
+		selInfo = fmt.Sprintf("   %s", styles.Cyan("selected: %d", selCount))
 	}
 	b.WriteString(fmt.Sprintf("\n  %s %d   %s   %s%s\n",
-		lgBold.Render("Total:"), m.data.total,
-		green("● Running: %d", m.data.run),
-		red("○ Stopped: %d", m.data.stop),
+		styles.LgBold.Render("Total:"), m.data.Total,
+		styles.Green("● Running: %d", m.data.Run),
+		styles.Red("○ Stopped: %d", m.data.Stop),
 		selInfo,
 	))
 
@@ -376,10 +379,10 @@ func (m tuiModel) View() string {
 	if m.searchMode {
 		b.WriteString(fmt.Sprintf("  🔍 %s\n", m.input.View()))
 	} else if v := m.input.Value(); v != "" {
-		b.WriteString(fmt.Sprintf("  🔍 %s\n", lgDim.Render(v)))
+		b.WriteString(fmt.Sprintf("  🔍 %s\n", styles.LgDim.Render(v)))
 	}
 
-	b.WriteString(lgHelp.Render("↑↓ move  space select  s shell  S stop  R restart  / search  esc clear  t tech  f full-path  q quit"))
+	b.WriteString(styles.LgHelp.Render("↑↓ move  space select  s shell  S stop  R restart  / search  esc clear  t tech  f full-path  q quit"))
 
 	return b.String()
 }

@@ -1,43 +1,46 @@
-package main
+package ui
 
 import (
 	"strings"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
+
+	"sir/internal/styles"
+	"sir/internal/types"
 )
 
-func statusText(r Row) string {
+func statusText(r types.Row) string {
 	switch r.Status {
-	case StatusRunning:
-		return green("● running")
-	case StatusStopped:
-		return red("○ stopped")
-	case StatusOther:
-		return yellow("○ %s", r.State)
-	case StatusError:
-		return yellow("! parse error")
+	case types.StatusRunning:
+		return styles.Green("● running")
+	case types.StatusStopped:
+		return styles.Red("○ stopped")
+	case types.StatusOther:
+		return styles.Yellow("○ %s", r.State)
+	case types.StatusError:
+		return styles.Yellow("! parse error")
 	}
 	return "-"
 }
 
-func buildTableRow(r Row, cfg ScanConfig) table.Row {
+func buildTableRow(r types.Row, cfg types.ScanConfig) table.Row {
 	row := table.Row{
 		r.Num,
-		cyan(r.Folder),
-		dim(r.Compose),
+		styles.Cyan(r.Folder),
+		styles.Dim(r.Compose),
 		r.Service,
-		dim(r.ContainerID),
+		styles.Dim(r.ContainerID),
 		r.Uptime,
 		statusText(r),
 	}
 	if cfg.Technical {
-		row = append(row, dim(r.Image), dim(r.Ports))
+		row = append(row, styles.Dim(r.Image), styles.Dim(r.Ports))
 	}
 	return row
 }
 
-func renderTable(rows []Row, cfg ScanConfig, cursor int, selected map[int]bool) string {
+func RenderTable(rows []types.Row, cfg types.ScanConfig, cursor int, selected map[int]bool) string {
 	t := table.NewWriter()
 	hdr := table.Row{" ", "#", "Folder", "Compose File", "Service", "Container ID", "Uptime", "Status"}
 	if cfg.Technical {
@@ -50,11 +53,11 @@ func renderTable(rows []Row, cfg ScanConfig, cursor int, selected map[int]bool) 
 		marker := " "
 		switch {
 		case isSel && isCur:
-			marker = cyan("✓")
+			marker = styles.Cyan("✓")
 		case isSel:
-			marker = green("✓")
+			marker = styles.Green("✓")
 		case isCur:
-			marker = cyan(">")
+			marker = styles.Cyan(">")
 		}
 		t.AppendRow(append(table.Row{marker}, buildTableRow(r, cfg)...))
 	}
@@ -67,12 +70,12 @@ func renderTable(rows []Row, cfg ScanConfig, cursor int, selected map[int]bool) 
 	return t.Render()
 }
 
-func filterRows(rows []Row, q string) []Row {
+func FilterRows(rows []types.Row, q string) []types.Row {
 	if q == "" {
 		return rows
 	}
 	q = strings.ToLower(q)
-	var out []Row
+	var out []types.Row
 	for _, r := range rows {
 		if strings.Contains(strings.ToLower(r.Folder), q) ||
 			strings.Contains(strings.ToLower(r.Compose), q) ||

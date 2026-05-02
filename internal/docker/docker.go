@@ -1,4 +1,4 @@
-package main
+package docker
 
 import (
 	"context"
@@ -8,7 +8,18 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
+
+	"sir/internal/styles"
 )
+
+type containerInfo struct {
+	ID      string
+	FullID  string
+	State   string
+	Created int64
+	Image   string
+	Ports   string
+}
 
 type containerIndex map[[2]string]containerInfo
 
@@ -104,8 +115,8 @@ func formatUptime(created int64, state string) string {
 	m := int(dur.Minutes()) % 60
 	s := int(dur.Seconds()) % 60
 	return fmt.Sprintf("%s%s:%s%s:%s%s:%s%s",
-		cyan("%d", d), dim("d"),
-		cyan("%02d", h), dim("h"),
-		cyan("%02d", m), dim("m"),
-		cyan("%02d", s), dim("s"))
+		styles.Cyan("%d", d), styles.Dim("d"),
+		styles.Cyan("%02d", h), styles.Dim("h"),
+		styles.Cyan("%02d", m), styles.Dim("m"),
+		styles.Cyan("%02d", s), styles.Dim("s"))
 }
