@@ -1,4 +1,4 @@
-package main
+package docker
 
 import (
 	"context"
@@ -9,9 +9,17 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
+
+	"sir/internal/types"
 )
 
-func findComposeDirs(root string, cfg ScanConfig) []composeDir {
+type composeDir struct {
+	dir          string
+	relFolder    string
+	composeFiles []string
+}
+
+func findComposeDirs(root string, cfg types.ScanConfig) []composeDir {
 	var result []composeDir
 	walkDir(root, root, 0, cfg.Depth, &result)
 	return result
@@ -43,13 +51,13 @@ func walkDir(root, current string, depth, maxDepth int, result *[]composeDir) {
 	}
 }
 
-func collectRows(ctx context.Context, cli *client.Client, targetPath string, cfg ScanConfig) scanResult {
+func CollectRows(ctx context.Context, cli *client.Client, targetPath string, cfg types.ScanConfig) types.ScanResult {
 	idx, _ := loadContainerIndex(ctx, cli)
 	if idx == nil {
 		idx = make(containerIndex)
 	}
 
-	var res scanResult
+	var res types.ScanResult
 	num := 0
 
 	for _, cd := range findComposeDirs(targetPath, cfg) {
@@ -61,17 +69,17 @@ func collectRows(ctx context.Context, cli *client.Client, targetPath string, cfg
 			projName, svcs, err := parseCompose(cf)
 			if err != nil || len(svcs) == 0 {
 				num++
-				res.total++
-				res.stop++
-				res.rows = append(res.rows, Row{Num: num, Folder: cd.relFolder, Compose: composeName, Service: "(parse error)", Uptime: "-", Image: "-", Ports: "-", Status: StatusError})
+				res.Total++
+				res.Stop++
+				res.Rows = append(res.Rows, types.Row{Num: num, Folder: cd.relFolder, Compose: composeName, Service: "(parse error)", Uptime: "-", Image: "-", Ports: "-", Status: types.StatusError})
 				continue
 			}
 			cands := projectCandidates(filepath.Base(cd.dir), projName)
 			for _, svc := range svcs {
 				num++
-				res.total++
+				res.Total++
 				info, found := idx.lookup(cands, svc)
-				r := Row{Num: num, Folder: cd.relFolder, Compose: composeName, Service: svc, State: info.State, Uptime: "-", ContainerID: "-", Image: "-", Ports: "-", Status: StatusStopped}
+				r := types.Row{Num: num, Folder: cd.relFolder, Compose: composeName, Service: svc, State: info.State, Uptime: "-", ContainerID: "-", Image: "-", Ports: "-", Status: types.StatusStopped}
 				if found {
 					r.Uptime = formatUptime(info.Created, info.State)
 					r.ContainerID = info.ID
@@ -80,33 +88,31 @@ func collectRows(ctx context.Context, cli *client.Client, targetPath string, cfg
 					r.Ports = info.Ports
 					switch info.State {
 					case "running":
-						r.Status = StatusRunning
-						res.run++
+						r.Status = types.StatusRunning
+						res.Run++
 					case "":
-						res.stop++
+						res.Stop++
 					default:
-						r.Status = StatusOther
-						res.stop++
+						r.Status = types.StatusOther
+						res.Stop++
 					}
 				} else {
-					res.stop++
+					res.Stop++
 				}
-				res.rows = append(res.rows, r)
+				res.Rows = append(res.Rows, r)
 			}
 		}
 	}
 	return res
 }
 
-// collectAllContainers lists ALL Docker Compose containers directly from the daemon.
-// Used when no path argument is provided.
-func collectAllContainers(ctx context.Context, cli *client.Client, cfg ScanConfig) scanResult {
+func CollectAllContainers(ctx context.Context, cli *client.Client, cfg types.ScanConfig) types.ScanResult {
 	containers, err := cli.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
-		return scanResult{}
+		return types.ScanResult{}
 	}
 
-	var res scanResult
+	var res types.ScanResult
 	num := 0
 
 	for _, c := range containers {
@@ -117,7 +123,7 @@ func collectAllContainers(ctx context.Context, cli *client.Client, cfg ScanConfi
 		}
 
 		num++
-		res.total++
+		res.Total++
 
 		var portParts []string
 		for _, p := range c.Ports {
@@ -150,7 +156,7 @@ func collectAllContainers(ctx context.Context, cli *client.Client, cfg ScanConfi
 			}
 		}
 
-		r := Row{
+		r := types.Row{
 			Num:             num,
 			Folder:          project,
 			Compose:         composeFilePath,
@@ -165,16 +171,16 @@ func collectAllContainers(ctx context.Context, cli *client.Client, cfg ScanConfi
 
 		switch c.State {
 		case "running":
-			r.Status = StatusRunning
-			res.run++
+			r.Status = types.StatusRunning
+			res.Run++
 		case "":
-			r.Status = StatusStopped
-			res.stop++
+			r.Status = types.StatusStopped
+			res.Stop++
 		default:
-			r.Status = StatusOther
-			res.stop++
+			r.Status = types.StatusOther
+			res.Stop++
 		}
-		res.rows = append(res.rows, r)
+		res.Rows = append(res.Rows, r)
 	}
 	return res
 }

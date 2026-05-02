@@ -16,13 +16,13 @@ A terminal tool for inspecting Docker Compose service status across your filesys
 ### One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/PuemMTH/sir-go/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/PuemMTH/sir-go/main/scripts/install.sh | bash
 ```
 
 Installs to `/usr/local/bin/sir`. Override the directory:
 
 ```bash
-INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/PuemMTH/sir-go/main/install.sh | bash
+INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/PuemMTH/sir-go/main/scripts/install.sh | bash
 ```
 
 ### Build from source
@@ -30,7 +30,7 @@ INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/PuemMTH/si
 ```bash
 git clone https://github.com/PuemMTH/sir-go
 cd sir-go
-go build -o sir .
+go build -o sir ./cmd/sir/
 ```
 
 ## Upgrade
@@ -176,19 +176,27 @@ The workflow builds binaries for all platforms, generates a `checksums.txt`, and
 sir-go/
 ├── .github/
 │   └── workflows/
-│       └── release.yml  # multi-arch build & GitHub release
-├── main.go              # cobra CLI entrypoint + version var
-├── types.go             # shared types and constants
-├── styles.go            # color and lipgloss style vars
-├── docker.go            # Docker SDK: container index, project matching, uptime
-├── compose.go           # docker-compose YAML parsing
-├── scan.go              # directory walk and data collection
-├── table.go             # table rendering and row filtering
-├── tui.go               # Bubble Tea TUI model
-├── print.go             # one-shot terminal output
-├── upgrade.go           # self-upgrade logic
-├── backup.go            # autobackup: pg_dump → gzip → Cloudflare R2
-└── install.sh           # curl-based installer
+│       └── release.yml       # multi-arch build & GitHub release
+├── cmd/sir/
+│   └── main.go               # cobra CLI entrypoint + version var
+├── internal/
+│   ├── types/types.go        # shared types and constants
+│   ├── styles/styles.go      # color and lipgloss style vars
+│   ├── docker/
+│   │   ├── docker.go         # container index, project matching, uptime
+│   │   ├── compose.go        # docker-compose YAML parsing
+│   │   └── scan.go           # directory walk and data collection
+│   ├── ui/
+│   │   ├── table.go          # table rendering and row filtering
+│   │   └── print.go          # one-shot terminal output
+│   ├── tui/tui.go            # Bubble Tea TUI model
+│   ├── backup/
+│   │   ├── backup.go         # autobackup: pg_dump → gzip → Cloudflare R2
+│   │   └── tui.go            # interactive backup TUI
+│   ├── config/config.go      # config load/init
+│   └── upgrade/upgrade.go    # self-upgrade logic
+└── scripts/
+    └── install.sh            # curl-based installer
 ```
 
 ## Requirements

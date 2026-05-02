@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"sir/internal/styles"
 )
 
 type Config struct {
@@ -16,7 +18,7 @@ type Config struct {
 	DefaultPath string `yaml:"default_path"`
 }
 
-func configPath() (string, error) {
+func Path() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
@@ -24,8 +26,8 @@ func configPath() (string, error) {
 	return filepath.Join(dir, "sir", "config.yaml"), nil
 }
 
-func loadConfig() Config {
-	p, err := configPath()
+func Load() Config {
+	p, err := Path()
 	if err != nil {
 		return Config{}
 	}
@@ -38,8 +40,8 @@ func loadConfig() Config {
 	return cfg
 }
 
-func initConfig() error {
-	p, err := configPath()
+func Init() error {
+	p, err := Path()
 	if err != nil {
 		return err
 	}
@@ -70,6 +72,6 @@ technical: false
 	if err := os.WriteFile(p, []byte(sample), 0o644); err != nil {
 		return err
 	}
-	cCyan.Printf("  ✓ Created config at %s\n", p)
+	styles.CCyan.Printf("  ✓ Created config at %s\n", p)
 	return nil
 }

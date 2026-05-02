@@ -1,4 +1,4 @@
-package main
+package upgrade
 
 import (
 	"crypto/sha256"
@@ -12,9 +12,7 @@ import (
 	"strings"
 )
 
-const (
-	upgradeRepo = "PuemMTH/sir-go"
-)
+const upgradeRepo = "PuemMTH/sir-go"
 
 type ghRelease struct {
 	TagName string    `json:"tag_name"`
@@ -26,11 +24,11 @@ type ghAsset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
-func runUpgrade() error {
+func Run(version string) error {
 	fmt.Printf("  Current version: %s\n", version)
 	fmt.Println("  Checking for updates...")
 
-	release, err := fetchLatestRelease()
+	release, err := fetchLatestRelease(version)
 	if err != nil {
 		return fmt.Errorf("could not fetch release info: %w", err)
 	}
@@ -58,10 +56,8 @@ func runUpgrade() error {
 		return fmt.Errorf("no binary found for %s/%s in release %s", runtime.GOOS, runtime.GOARCH, release.TagName)
 	}
 
-	// Find checksum for our asset
 	expectedSum, err := fetchChecksum(release, assetName)
 	if err != nil {
-		// Non-fatal: warn but continue
 		fmt.Printf("  Warning: could not verify checksum: %v\n", err)
 	}
 
@@ -93,9 +89,9 @@ func runUpgrade() error {
 	return nil
 }
 
-func fetchLatestRelease() (*ghRelease, error) {
+func fetchLatestRelease(version string) (*ghRelease, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", upgradeRepo)
-	data, err := httpGetJSON(url)
+	data, err := httpGetWithAccept(url, "application/vnd.github+json", version)
 	if err != nil {
 		return nil, err
 	}
@@ -134,14 +130,10 @@ func fetchChecksum(release *ghRelease, assetName string) (string, error) {
 }
 
 func httpGet(url string) ([]byte, error) {
-	return httpGetWithAccept(url, "application/octet-stream")
+	return httpGetWithAccept(url, "application/octet-stream", "")
 }
 
-func httpGetJSON(url string) ([]byte, error) {
-	return httpGetWithAccept(url, "application/vnd.github+json")
-}
-
-func httpGetWithAccept(url, accept string) ([]byte, error) {
+func httpGetWithAccept(url, accept, version string) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -161,8 +153,6 @@ func httpGetWithAccept(url, accept string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-// replaceSelf writes data to a temp file beside the current executable,
-// then atomically renames it into place.
 func replaceSelf(execPath string, data []byte) error {
 	tmp, err := os.CreateTemp("", "sir-upgrade-*")
 	if err != nil {
@@ -181,7 +171,5 @@ func replaceSelf(execPath string, data []byte) error {
 	}
 	tmp.Close()
 
-	// Atomic replace — works on Unix even for the running binary.
-	// On Windows the binary must not be in use; note this limitation.
 	return os.Rename(tmpPath, execPath)
 }

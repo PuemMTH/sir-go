@@ -1,4 +1,4 @@
-package main
+package ui
 
 import (
 	"fmt"
@@ -6,15 +6,18 @@ import (
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
+
+	"sir/internal/styles"
+	"sir/internal/types"
 )
 
-func printOneShot(targetPath string, cfg ScanConfig, res scanResult) {
+func PrintOneShot(targetPath string, cfg types.ScanConfig, res types.ScanResult) {
 	fmt.Println()
-	cCyan.Println("  🐳  SIR - Service Inspector Reporter")
-	fmt.Printf("\n  %s %s\n\n", bold("Scanning:"), dim(targetPath))
+	styles.CCyan.Println("  🐳  SIR - Service Inspector Reporter")
+	fmt.Printf("\n  %s %s\n\n", styles.Bold("Scanning:"), styles.Dim(targetPath))
 
-	if len(res.rows) == 0 {
-		cYellow.Println("  No docker-compose files found")
+	if len(res.Rows) == 0 {
+		styles.CYellow.Println("  No docker-compose files found")
 		return
 	}
 
@@ -25,7 +28,7 @@ func printOneShot(targetPath string, cfg ScanConfig, res scanResult) {
 		hdr = append(hdr, "Image", "Ports")
 	}
 	t.AppendHeader(hdr)
-	for _, r := range res.rows {
+	for _, r := range res.Rows {
 		t.AppendRow(buildTableRow(r, cfg))
 	}
 	style := table.StyleLight
@@ -37,8 +40,8 @@ func printOneShot(targetPath string, cfg ScanConfig, res scanResult) {
 	t.Render()
 
 	fmt.Printf("\n  %s %d   %s   %s\n\n",
-		bold("Total:"), res.total,
-		green("● Running: %d", res.run),
-		red("○ Stopped: %d", res.stop),
+		styles.Bold("Total:"), res.Total,
+		styles.Green("● Running: %d", res.Run),
+		styles.Red("○ Stopped: %d", res.Stop),
 	)
 }
