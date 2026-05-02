@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -65,6 +64,9 @@ type tuiModel struct {
 	ready      bool
 	width      int
 	height     int
+
+	mode    string // "" list  |  "logs" log view
+	logView logViewModel
 }
 
 func New(ctx context.Context, cli *client.Client, targetPath string, cfg types.ScanConfig, interval time.Duration) tea.Model {
@@ -141,6 +143,22 @@ func (m tuiModel) bulkRestartCmd(ids []string) tea.Cmd {
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	// delegate all events to the log view while it is active
+	if m.mode == "logs" {
+		switch msg.(type) {
+		case tickMsg, refreshMsg:
+			// pause background refresh while viewing logs; restart on exit
+			return m, nil
+		}
+		newLV, cmd, exit := m.logView.update(msg)
+		m.logView = newLV
+		if exit {
+			m.mode = ""
+			return m, tea.Batch(m.refresh(), tickCmd(m.interval))
+		}
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.searchMode {
@@ -199,17 +217,18 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case "s":
+		case "enter":
 			filtered := ui.FilterRows(m.data.Rows, m.input.Value())
 			if m.cursor < len(filtered) {
 				r := filtered[m.cursor]
-				if r.Status == types.StatusRunning && r.FullContainerID != "" {
-					shellCmd := exec.Command("docker", "exec", "-it", r.FullContainerID, "sh")
-					return m, tea.ExecProcess(shellCmd, func(err error) tea.Msg {
-						return execDoneMsg{err: err}
-					})
+				if r.FullContainerID != "" {
+					lv, cmd := newLogView(m.ctx, m.cli, r)
+					lv = lv.resized(m.width, m.height)
+					m.logView = lv
+					m.mode = "logs"
+					return m, cmd
 				}
-				m.statusMsg = styles.Yellow("  ⚠  '%s' is not running", r.Service)
+				m.statusMsg = styles.Yellow("  ⚠  '%s' has no container ID", r.Service)
 				return m, clearStatusAfter(3 * time.Second)
 			}
 			return m, nil
@@ -247,15 +266,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.refresh())
 			return m, tea.Batch(cmds...)
 		}
-
-	case execDoneMsg:
-		if msg.err != nil {
-			m.statusMsg = styles.Red("  ✗  Shell exited: %v", msg.err)
-		} else {
-			m.statusMsg = styles.Green("  ✓  Shell session ended")
-		}
-		m.updateViewport()
-		return m, clearStatusAfter(3 * time.Second)
 
 	case bulkDoneMsg:
 		m.selected = make(map[int]bool)
@@ -337,6 +347,9 @@ func (m *tuiModel) updateViewport() {
 }
 
 func (m tuiModel) View() string {
+	if m.mode == "logs" {
+		return m.logView.View()
+	}
 	if !m.ready {
 		return "  Loading..."
 	}
@@ -382,7 +395,7 @@ func (m tuiModel) View() string {
 		b.WriteString(fmt.Sprintf("  🔍 %s\n", styles.LgDim.Render(v)))
 	}
 
-	b.WriteString(styles.LgHelp.Render("↑↓ move  space select  s shell  S stop  R restart  / search  esc clear  t tech  f full-path  q quit"))
+	b.WriteString(styles.LgHelp.Render("↑↓ move  space select  enter logs  S stop  R restart  / search  esc clear  t tech  f full-path  q quit"))
 
 	return b.String()
 }

@@ -21,7 +21,7 @@ import (
 )
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z"
-var version = "dev"
+var version = "v5.1.0"
 
 func main() {
 	var (
@@ -166,6 +166,43 @@ func main() {
 				}
 			},
 		},
+		func() *cobra.Command {
+			var listOnly bool
+			c := &cobra.Command{
+				Use:   "switch [version]",
+				Short: "Switch to a specific release version",
+				Long: `Switch to a specific sir release (e.g. v1.2.3).
+Run without arguments or with --list to see available versions.`,
+				Args: cobra.MaximumNArgs(1),
+				Example: `  sir switch --list
+  sir switch v1.2.0`,
+				Run: func(cmd *cobra.Command, args []string) {
+					if listOnly || len(args) == 0 {
+						versions, err := upgrade.ListVersions(version)
+						if err != nil {
+							styles.CRed.Printf("  Error: %v\n", err)
+							os.Exit(1)
+						}
+						styles.CCyan.Println("  Available versions:")
+						for _, v := range versions {
+							if v == version {
+								styles.CGreen.Printf("  → %s (current)\n", v)
+							} else {
+								styles.CCyan.Printf("    %s\n", v)
+							}
+						}
+						return
+					}
+					target := args[0]
+					if err := upgrade.Switch(version, target); err != nil {
+						styles.CRed.Printf("  Error: %v\n", err)
+						os.Exit(1)
+					}
+				},
+			}
+			c.Flags().BoolVarP(&listOnly, "list", "l", false, "list available versions")
+			return c
+		}(),
 		configCmd,
 	)
 

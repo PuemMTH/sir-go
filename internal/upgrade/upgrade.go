@@ -105,6 +105,102 @@ func fetchLatestRelease(version string) (*ghRelease, error) {
 	return &rel, nil
 }
 
+func fetchReleaseByTag(tag, version string) (*ghRelease, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", upgradeRepo, tag)
+	data, err := httpGetWithAccept(url, "application/vnd.github+json", version)
+	if err != nil {
+		return nil, err
+	}
+	var rel ghRelease
+	if err := json.Unmarshal(data, &rel); err != nil {
+		return nil, err
+	}
+	if rel.TagName == "" {
+		return nil, fmt.Errorf("release %s not found in %s", tag, upgradeRepo)
+	}
+	return &rel, nil
+}
+
+func ListVersions(version string) ([]string, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=30", upgradeRepo)
+	data, err := httpGetWithAccept(url, "application/vnd.github+json", version)
+	if err != nil {
+		return nil, err
+	}
+	var releases []ghRelease
+	if err := json.Unmarshal(data, &releases); err != nil {
+		return nil, err
+	}
+	tags := make([]string, 0, len(releases))
+	for _, r := range releases {
+		tags = append(tags, r.TagName)
+	}
+	return tags, nil
+}
+
+func Switch(currentVersion, targetVersion string) error {
+	fmt.Printf("  Current version : %s\n", currentVersion)
+	fmt.Printf("  Target version  : %s\n", targetVersion)
+
+	if currentVersion == targetVersion {
+		fmt.Println("  Already on the requested version.")
+		return nil
+	}
+
+	release, err := fetchReleaseByTag(targetVersion, currentVersion)
+	if err != nil {
+		return fmt.Errorf("could not fetch release %s: %w", targetVersion, err)
+	}
+
+	assetName := fmt.Sprintf("sir_%s_%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		assetName += ".exe"
+	}
+
+	var downloadURL string
+	for _, a := range release.Assets {
+		if a.Name == assetName {
+			downloadURL = a.BrowserDownloadURL
+			break
+		}
+	}
+	if downloadURL == "" {
+		return fmt.Errorf("no binary found for %s/%s in release %s", runtime.GOOS, runtime.GOARCH, targetVersion)
+	}
+
+	expectedSum, err := fetchChecksum(release, assetName)
+	if err != nil {
+		fmt.Printf("  Warning: could not verify checksum: %v\n", err)
+	}
+
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("could not determine executable path: %w", err)
+	}
+
+	fmt.Printf("  Downloading %s...\n", assetName)
+	data, err := httpGet(downloadURL)
+	if err != nil {
+		return fmt.Errorf("download failed: %w", err)
+	}
+
+	if expectedSum != "" {
+		sum := sha256.Sum256(data)
+		got := hex.EncodeToString(sum[:])
+		if got != expectedSum {
+			return fmt.Errorf("checksum mismatch: got %s, want %s", got, expectedSum)
+		}
+		fmt.Println("  Checksum verified.")
+	}
+
+	if err := replaceSelf(execPath, data); err != nil {
+		return fmt.Errorf("could not replace binary: %w", err)
+	}
+
+	fmt.Printf("  ✓ Switched to %s\n", release.TagName)
+	return nil
+}
+
 func fetchChecksum(release *ghRelease, assetName string) (string, error) {
 	var checksumURL string
 	for _, a := range release.Assets {
