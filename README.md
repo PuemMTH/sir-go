@@ -25,6 +25,12 @@ Installs to `/usr/local/bin/sir`. Override the directory:
 INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/PuemMTH/sir-go/main/scripts/install.sh | bash
 ```
 
+### Windows (WinGet)
+
+```powershell
+winget install PuemMTH.SIR
+```
+
 ### Build from source
 
 ```bash
