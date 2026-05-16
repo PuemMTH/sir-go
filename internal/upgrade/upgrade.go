@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const upgradeRepo = "PuemMTH/sir-go"
+const upgradeRepo = "sir-labs/sir-cli"
 
 type ghRelease struct {
 	TagName string    `json:"tag_name"`

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# curl -fsSL https://raw.githubusercontent.com/PuemMTH/sir-go/main/install.sh | bash
+ bash| bash
 set -euo pipefail
 
-REPO="PuemMTH/sir-go"
+REPO="sir-labs/sir-cli"
 BIN_NAME="sir"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
