@@ -20,7 +20,7 @@ import (
 )
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z"
-var version = "v6.0.0"
+var version = "v6.0.1"
 
 func main() {
 	var (

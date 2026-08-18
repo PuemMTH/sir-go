@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -250,7 +251,8 @@ func httpGetWithAccept(url, accept, version string) ([]byte, error) {
 }
 
 func replaceSelf(execPath string, data []byte) error {
-	tmp, err := os.CreateTemp("", "sir-upgrade-*")
+	// ponytail: temp must share the filesystem with the target, else rename gives EXDEV
+	tmp, err := os.CreateTemp(filepath.Dir(execPath), ".sir-upgrade-*")
 	if err != nil {
 		return err
 	}

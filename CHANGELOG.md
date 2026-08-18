@@ -4,6 +4,13 @@ All notable changes to sir-go are documented here.
 
 ---
 
+## [v6.0.1] — 2026-08-18
+
+### Fixed
+- **`sir upgrade` / `sir switch` failing with `invalid cross-device link`** — the new binary was staged in `$TMPDIR` and renamed onto the install path, which fails when the two live on different filesystems (e.g. tmpfs `/tmp` and `~/.local/bin`). The staging file is now created next to the target binary.
+
+---
+
 ## [v6.0.0] — 2026-08-18
 
 ### Removed
