@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
- bash| bash
 set -euo pipefail
 
 REPO="sir-labs/sir-cli"
@@ -80,6 +79,8 @@ fi
 # ── Install ───────────────────────────────────────────────────────────────────
 
 chmod +x "${TMP_DIR}/${BIN_NAME}"
+
+mkdir -p "$INSTALL_DIR" 2>/dev/null || true
 
 if [ -w "$INSTALL_DIR" ]; then
   mv "${TMP_DIR}/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
