@@ -4,6 +4,13 @@ All notable changes to sir-go are documented here.
 
 ---
 
+## [v6.0.0] — 2026-08-18
+
+### Removed
+- **`sir autobackup`** — the PostgreSQL → Cloudflare R2 backup command, its interactive TUI, and the `~/.sir/settings.json` credential store. This also drops the aws-sdk-go-v2 dependency tree.
+
+---
+
 ## [v0.2.0] — 2026-05-02
 
 ### Added
