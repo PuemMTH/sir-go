@@ -10,7 +10,6 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/spf13/cobra"
 
-	"sir/internal/backup"
 	"sir/internal/config"
 	"sir/internal/docker"
 	"sir/internal/styles"
@@ -146,7 +145,6 @@ func main() {
 	})
 
 	rootCmd.AddCommand(
-		backup.NewCmd(),
 		&cobra.Command{
 			Use:   "version",
 			Short: "Print the current version",
